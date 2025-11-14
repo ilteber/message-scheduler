@@ -1,0 +1,348 @@
+openapi: 3.0.3
+info:
+  title: Message Scheduler API
+  description: |
+    Automatic message sending system that processes and sends messages from a database 
+    to a webhook endpoint at configurable intervals.
+    
+    ## Features
+    - Automatic message sending (2 messages every 2 minutes)
+    - Custom scheduler without cron packages
+    - Redis caching for sent messages
+    - PostgreSQL database with status tracking
+    
+  version: 1.0.0
+  contact:
+    name: Message Scheduler Project
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Health
+    description: System health check
+  - name: Scheduler
+    description: Scheduler control operations
+  - name: Messages
+    description: Message retrieval operations
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the API and scheduler
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "API is running"
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        example: "healthy"
+                      scheduler_status:
+                        type: boolean
+                        example: true
+
+  /api/scheduler:
+    post:
+      tags:
+        - Scheduler
+      summary: Control scheduler
+      description: Start or stop the message scheduler
+      operationId: controlScheduler
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - command
+              properties:
+                command:
+                  type: string
+                  enum: [start, stop]
+                  description: Command to execute
+                  example: "start"
+            examples:
+              start:
+                summary: Start scheduler
+                value:
+                  command: "start"
+              stop:
+                summary: Stop scheduler
+                value:
+                  command: "stop"
+      responses:
+        '200':
+          description: Command executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              examples:
+                started:
+                  summary: Scheduler started
+                  value:
+                    success: true
+                    message: "Scheduler started"
+                stopped:
+                  summary: Scheduler stopped
+                  value:
+                    success: true
+                    message: "Scheduler stopped"
+                alreadyRunning:
+                  summary: Already running
+                  value:
+                    success: true
+                    message: "Scheduler is already running"
+        '400':
+          description: Invalid command
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Invalid command. Use 'start' or 'stop'"
+
+  /api/messages/sent:
+    post:
+      tags:
+        - Messages
+      summary: Retrieve sent messages
+      description: |
+        Retrieves sent messages with optional filtering by phone number and date range.
+        Supports pagination with a maximum limit of 50 messages per request.
+      operationId: getSentMessages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone_number
+              properties:
+                phone_number:
+                  type: string
+                  description: Phone number to filter by, or "all" for all messages
+                  example: "+905551234567"
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 50
+                  default: 50
+                  description: Number of messages to return (max 50)
+                  example: 10
+                offset:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                  description: Number of messages to skip for pagination
+                  example: 0
+                sent_after:
+                  type: string
+                  format: date-time
+                  description: Filter messages sent after this timestamp (RFC3339)
+                  example: "2025-11-14T00:00:00Z"
+                sent_before:
+                  type: string
+                  format: date-time
+                  description: Filter messages sent before this timestamp (RFC3339)
+                  example: "2025-11-14T23:59:59Z"
+            examples:
+              allMessages:
+                summary: Get all sent messages
+                value:
+                  phone_number: "all"
+                  limit: 10
+                  offset: 0
+              specificPhone:
+                summary: Get messages for specific phone
+                value:
+                  phone_number: "+905551234567"
+                  limit: 10
+                  offset: 0
+              withDateFilter:
+                summary: Get messages with date range
+                value:
+                  phone_number: "all"
+                  limit: 10
+                  offset: 0
+                  sent_after: "2025-11-14T00:00:00Z"
+                  sent_before: "2025-11-14T23:59:59Z"
+              pagination:
+                summary: Get second page
+                value:
+                  phone_number: "all"
+                  limit: 50
+                  offset: 50
+      responses:
+        '200':
+          description: Successfully retrieved messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                        description: Total number of messages matching the criteria
+                        example: 114
+                      messages:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Message'
+              examples:
+                success:
+                  summary: Successful response
+                  value:
+                    success: true
+                    data:
+                      total: 114
+                      messages:
+                        - id: 124
+                          phone_number: "+905559876543"
+                          content: "NEW TEST MESSAGE: Second fresh message - scheduler should pick this up automatically!"
+                          status: "sent"
+                          message_id: "67f2f8a8-ea58-4ed0-a6f9-ff217df4d849"
+                          sent_at: "2025-11-14T02:18:22.624131Z"
+                          created_at: "2025-11-14T02:18:19.479291Z"
+                          updated_at: "2025-11-14T02:18:22.624131Z"
+        '400':
+          description: Bad request (missing required field or invalid date format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingField:
+                  summary: Missing phone_number field
+                  value:
+                    success: false
+                    error: "phone_number field is required"
+                invalidDate:
+                  summary: Invalid date format
+                  value:
+                    success: false
+                    error: "invalid sent_after format, use RFC3339 (e.g., 2025-11-14T10:00:00Z)"
+        '404':
+          description: Phone number not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Phone number not found"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique message identifier
+          example: 124
+        phone_number:
+          type: string
+          description: Recipient phone number
+          example: "+905551234567"
+        content:
+          type: string
+          maxLength: 500
+          description: Message content (max 500 characters)
+          example: "This is a test message"
+        status:
+          type: string
+          enum: [pending, sent, failed]
+          description: Message status
+          example: "sent"
+        message_id:
+          type: string
+          nullable: true
+          description: Unique message ID returned from webhook (null if not sent)
+          example: "67f2f8a8-ea58-4ed0-a6f9-ff217df4d849"
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when message was sent (null if not sent)
+          example: "2025-11-14T02:18:22.624131Z"
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when message was created
+          example: "2025-11-14T02:18:19.479291Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when message was last updated
+          example: "2025-11-14T02:18:22.624131Z"
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation successful"
+        data:
+          type: object
+          description: Response data (optional)
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message
+          example: "An error occurred"
+
+  examples:
+    MessageExample:
+      value:
+        id: 123
+        phone_number: "+905551234567"
+        content: "This message is supposed to be pending (1/31) - waiting for scheduler"
+        status: "sent"
+        message_id: "67f2f8a8-ea58-4ed0-a6f9-ff217df4d849"
+        sent_at: "2025-11-14T02:14:37.759639Z"
+        created_at: "2025-11-14T08:00:00Z"
+        updated_at: "2025-11-14T02:14:37.759639Z"
+

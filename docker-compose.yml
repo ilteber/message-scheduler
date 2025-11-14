@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: message_scheduler_postgres
+    environment:
+      POSTGRES_USER: insider
+      POSTGRES_PASSWORD: insider123
+      POSTGRES_DB: insider_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts:/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insider"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - message_scheduler_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: message_scheduler_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - message_scheduler_network
+
+  # Database Initialization
+  db_init:
+    image: postgres:15-alpine
+    container_name: message_scheduler_db_init
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: insider
+      DB_PASSWORD: insider123
+      DB_NAME: insider_db
+    volumes:
+      - ./scripts:/scripts:ro
+    command: sh /scripts/init_db.sh
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - message_scheduler_network
+    restart: "no"
+
+  # Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: message_scheduler_app
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: insider
+      DB_PASSWORD: insider123
+      DB_NAME: insider_db
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      # IMPORTANT: Configure your webhook.site URL here!
+      # 1. Visit https://webhook.site
+      # 2. Copy your unique URL
+      # 3. Replace the URL below with your webhook URL
+      WEBHOOK_URL: ${WEBHOOK_URL:-https://webhook.site/9e83d1aa-0046-4f29-a2d8-deb68ce93ec0}
+      WEBHOOK_AUTH_KEY: ${WEBHOOK_AUTH_KEY:-INS.me1x9uMcyYGlhKKQVPoc.bO3j9aZwRTOcA2Ywo}
+      MESSAGE_MAX_LENGTH: 500
+      SCHEDULER_INTERVAL_SECONDS: 120
+      MESSAGES_PER_BATCH: 2
+      SERVER_PORT: 8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db_init:
+        condition: service_completed_successfully
+    networks:
+      - message_scheduler_network
+    restart: unless-stopped
+
+  # Swagger UI
+  swagger-ui:
+    image: swaggerapi/swagger-ui
+    container_name: message_scheduler_swagger
+    ports:
+      - "8081:8080"
+    environment:
+      SWAGGER_JSON: /swagger.yaml
+    volumes:
+      - ./swagger.yaml:/swagger.yaml
+    networks:
+      - message_scheduler_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  message_scheduler_network:
+    driver: bridge
