@@ -119,16 +119,10 @@ The API is fully documented using OpenAPI 3.0 (Swagger) specification.
 
 ### View API Documentation
 
-**Swagger UI (Interactive):**
+**Swagger UI:**
 ```
 http://localhost:8081
 ```
-
-The Swagger UI provides:
-- Complete API reference
-- Interactive "Try it out" functionality
-- Request/response examples
-- Schema definitions
 
 **Swagger File:** `swagger.yaml` (OpenAPI 3.0 specification)
 
@@ -472,18 +466,6 @@ docker-compose up -d --build
 
 **Note:** No external frameworks used. Built with Go standard library for simplicity and learning.
 
-## Requirements Met
-
-- Auto-send 2 messages every 2 minutes
-- Retrieve messages from database (no message creation API)
-- Auto-start scheduler on deployment
-- No duplicate sends
-- Process newly added records automatically
-- Redis caching for sent messages
-- Two API endpoints: scheduler control and message retrieval
-- Custom scheduler without cron packages
-- Docker Compose for easy setup
-- SQL-based seed data
 
 ## Troubleshooting
 
